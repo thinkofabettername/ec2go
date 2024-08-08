@@ -6,11 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"os"
+	"os/exec"
 	"sort"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	//"github.com/aws/aws-sdk-go-v2/internal/configsources"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
@@ -18,11 +22,6 @@ import (
 )
 
 // globals
-var userdata = base64.StdEncoding.EncodeToString([]byte(
-	`#!/bin/bash
-	apt-get update 
-	apt-get install vim tmux -y`))
-
 func main() {
 	keyname := "default-key"
 	var sgName string = "ec2go"
@@ -40,8 +39,88 @@ func main() {
 		createSecurityGroup(sgName, client)
 		uploadKey(keyname, client)
 		imageid := getDebianId(client, "12")
-		runInstance(imageid, keyname, getSecurityGroupId(sgName, client), client)
+		instanceId := runInstance(imageid, keyname, getSecurityGroupId(sgName, client), client)
+		connectToInstance(instanceId, client)
+		println(instanceId)
 	}
+}
+
+func getUserData() string {
+	return base64.StdEncoding.EncodeToString([]byte(`#!/bin/bash
+function die {
+        sleep 21600 ; poweroff
+}
+die &
+echo export TERM=xterm >> /root/.bashrc
+echo export TERM=xterm >> /home/admin/.bashrc
+echo export EDITOR='vim' >> /root/.bashrc
+echo export EDITOR='vim' >> /home/admin/.bashrc
+
+BASHRC="ZnVuY3Rpb24gaXBjaGVjayB7CgljdXJsIGNoZWNraXAuYW1hem9uYXdzLmNvbSAyPiAvZGV2L251bGwKfQoKZnVuY3Rpb24gd2hvaXNjaGVjayB7Cgl3aG9pcyAkKGlwY2hlY2spCn0KCmZ1bmN0aW9uIGltZHMgewoJVE9LRU49JChjdXJsIC1YIFBVVCAiaHR0cDovLzE2OS4yNTQuMTY5LjI1NC9sYXRlc3QvYXBpL3Rva2VuIiAtSCAiWC1hd3MtZWMyLW1ldGFkYXRhLXRva2VuLXR0bC1zZWNvbmRzOiAyMTYwMCIgMj4gL2Rldi9udWxsKQoJY3VybCAtSCAiWC1hd3MtZWMyLW1ldGFkYXRhLXRva2VuOiAkVE9LRU4iIGh0dHA6Ly8xNjkuMjU0LjE2OS4yNTQvJDEgMj4gL2Rldi9udWxsCgllY2hvICIiCn0KCmZ1bmN0aW9uIHVzZXJkYXRhIHsKCWltZHMgbGF0ZXN0L3VzZXItZGF0YQp9CgpmdW5jdGlvbiBpbnN0YW5jZWlkIHsKCWltZHMgbGF0ZXN0L21ldGEtZGF0YS9pbnN0YW5jZS1pZAp9Cg==" 
+echo $BASHRC | base64 -d >> /home/admin/.bashrc
+echo $BASHRC | base64 -d >> /root/.bashrc
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y iptables
+apt-get install -y iperf3
+apt-get install -y net-tools
+apt-get install -y tcpdump
+apt-get install -y htop
+apt-get install -y whois
+apt-get install -y bind9-dnsutils
+apt-get install -y tmux
+`))
+
+}
+
+func waitForSocket(host string, port string) {
+
+	for i := 0; i < 120; i++ {
+		tcpServer, err := net.ResolveTCPAddr("tcp", host+":"+port)
+
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		conn, err := net.DialTCP("tcp", nil, tcpServer)
+		if err != nil {
+			fmt.Println("dial error ", err)
+			fmt.Println(host, port)
+			time.Sleep(time.Duration(time.Second * 1))
+			continue
+		}
+		conn.Close()
+		break
+	}
+}
+
+func connectToInstance(instanceId string, client *ec2.Client) {
+	time.Sleep(time.Duration(time.Second * 5))
+	instance, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
+		InstanceIds: []string{instanceId},
+	})
+
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	ip := *instance.Reservations[0].Instances[0].PublicIpAddress
+	fmt.Println("IP Address = ", ip)
+
+	waitForSocket(ip, "22")
+
+	cmd := exec.Command("ssh", "-l", "admin", ip)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err = cmd.Run() // add error checking
+
+	if err != nil {
+		log.Fatalln("ssh failed")
+	}
+	fmt.Println("After SSH")
 }
 
 func boolPointer(b bool) *bool {
@@ -70,10 +149,6 @@ func getDebianId(client *ec2.Client, version string) string {
 	sort.Slice(images.Images, func(i, j int) bool {
 		return *images.Images[i].CreationDate > *images.Images[j].CreationDate
 	})
-
-	for _, i := range images.Images {
-		fmt.Printf("%s %s %s\n", *i.CreationDate, *i.ImageId, *i.Name)
-	}
 
 	return *images.Images[0].ImageId
 }
@@ -219,8 +294,9 @@ func uploadKey(keyName string, client *ec2.Client) {
 	}
 }
 
-func runInstance(ami string, keyName string, sgid string, client *ec2.Client) {
-	//cfg, err := config.LoadDefaultConfig(context.TODO())
+func runInstance(ami string, keyName string, sgid string, client *ec2.Client) string {
+	fmt.Println("Launching instance with ami ", ami)
+
 	tagspec := types.TagSpecification{
 		ResourceType: "instance",
 		Tags: []types.Tag{
@@ -234,6 +310,8 @@ func runInstance(ami string, keyName string, sgid string, client *ec2.Client) {
 			},
 		},
 	}
+
+	userdata := getUserData()
 
 	output, err := client.RunInstances(
 		context.TODO(),
@@ -255,5 +333,6 @@ func runInstance(ami string, keyName string, sgid string, client *ec2.Client) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(output)
+
+	return *output.Instances[0].InstanceId
 }
