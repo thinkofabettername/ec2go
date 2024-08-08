@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
 	"os"
+	"sort"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -15,11 +17,17 @@ import (
 	"github.com/aws/smithy-go"
 )
 
+// globals
+var userdata = base64.StdEncoding.EncodeToString([]byte(
+	`#!/bin/bash
+	apt-get update 
+	apt-get install vim tmux -y`))
+
 func main() {
 	keyname := "default-key"
 	var sgName string = "ec2go"
 
-	var launchinstance bool = false
+	var launchinstance bool = true
 
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
@@ -31,8 +39,43 @@ func main() {
 	if launchinstance {
 		createSecurityGroup(sgName, client)
 		uploadKey(keyname, client)
-		runInstance("ami-00902d02d7a700776", keyname, client)
+		imageid := getDebianId(client, "12")
+		runInstance(imageid, keyname, getSecurityGroupId(sgName, client), client)
 	}
+}
+
+func boolPointer(b bool) *bool {
+	return &b
+}
+
+func getDebianId(client *ec2.Client, version string) string {
+	images, err := client.DescribeImages(context.TODO(), &ec2.DescribeImagesInput{
+		Filters: []types.Filter{
+			{
+				Name:   aws.String("name"),
+				Values: []string{fmt.Sprintf("*debian-%s-amd64*", version)},
+			},
+			{
+				Name:   aws.String("architecture"),
+				Values: []string{"x86_64"},
+			},
+		},
+		IncludeDeprecated: boolPointer(true),
+	})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	sort.Slice(images.Images, func(i, j int) bool {
+		return *images.Images[i].CreationDate > *images.Images[j].CreationDate
+	})
+
+	for _, i := range images.Images {
+		fmt.Printf("%s %s %s\n", *i.CreationDate, *i.ImageId, *i.Name)
+	}
+
+	return *images.Images[0].ImageId
 }
 
 func getSecurityGroupId(sgName string, client *ec2.Client) string {
@@ -176,7 +219,7 @@ func uploadKey(keyName string, client *ec2.Client) {
 	}
 }
 
-func runInstance(ami string, keyName string, client *ec2.Client) {
+func runInstance(ami string, keyName string, sgid string, client *ec2.Client) {
 	//cfg, err := config.LoadDefaultConfig(context.TODO())
 	tagspec := types.TagSpecification{
 		ResourceType: "instance",
@@ -184,6 +227,10 @@ func runInstance(ami string, keyName string, client *ec2.Client) {
 			{
 				Key:   aws.String("purpose"),
 				Value: aws.String("qec2"),
+			},
+			{
+				Key:   aws.String("distribution"),
+				Value: aws.String("debian"),
 			},
 		},
 	}
@@ -197,6 +244,11 @@ func runInstance(ami string, keyName string, client *ec2.Client) {
 			MinCount:          aws.Int32(1),
 			TagSpecifications: []types.TagSpecification{tagspec},
 			KeyName:           aws.String(keyName),
+			SecurityGroupIds:  []string{sgid},
+			UserData:          &userdata,
+			InstanceMarketOptions: &types.InstanceMarketOptionsRequest{
+				MarketType: "spot",
+			},
 		},
 	)
 
