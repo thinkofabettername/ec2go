@@ -32,6 +32,10 @@ var validModules []string = []string{
 	"connect",
 }
 
+type ec2goListInstancesInterface struct {
+	silent bool
+}
+
 func main() {
 
 	cfg, err := config.LoadDefaultConfig(context.TODO())
@@ -67,36 +71,120 @@ func main() {
 		runModule()
 	} else if module == "list" {
 		listModule()
+	} else if module == "terminate" {
+		terminateModule()
 	} else {
 		fmt.Println("Module not implemented yet, maybe you borked it?")
 		mainUsage()
 	}
-
 }
 
-func listInstances() {
-	instances, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{})
+func terminateInstances(instances []string) {
+	result, err := client.TerminateInstances(context.TODO(), &ec2.TerminateInstancesInput{
+		InstanceIds: instances,
+	})
+
+	if err != nil {
+		log.Fatal("terminating instances error:\n", err)
+	}
+
+	for _, instance := range result.TerminatingInstances {
+		fmt.Printf("Terminating instance %s\n", *instance.InstanceId)
+
+	}
+}
+
+func terminateModule() {
+	var instances *ec2.DescribeInstancesOutput
+	ec2rampage := false
+	rampage := false
+	if len(os.Args) == 2 {
+		fmt.Printf("Please select an instance to terminate")
+		instances = listInstances(ec2goListInstancesInterface{silent: false})
+		var instanceToTerminate int
+		fmt.Scan(&instanceToTerminate)
+		fmt.Println("\"Terminating\" instance ", *instances.Reservations[instanceToTerminate].Instances[0].InstanceId)
+		terminateInstances([]string{*instances.Reservations[instanceToTerminate].Instances[0].InstanceId})
+	} else if len(os.Args) == 3 {
+		if os.Args[2] == "--rampage" {
+			fmt.Print("!!! RAMPAGE !!! - all instances (tagged with ec2go) will be terminated\n")
+			instances = listInstances(ec2goListInstancesInterface{silent: true})
+			ec2rampage = true
+		}
+		if os.Args[2] == "--RAMPAGE" {
+			fmt.Print("!!! RAMPAGE !!! - all instances will be terminated\n")
+			instances = listInstances(ec2goListInstancesInterface{silent: true})
+			rampage = true
+		}
+	} else {
+		log.Fatal("Error terminate modules takes no arguments or one of --rampage or --RAMPAGE")
+	}
+
+	var terminationList []string = make([]string, 0)
+
+	if rampage {
+		for _, instance := range instances.Reservations {
+			if instance.Instances[0].State.Name == "running" {
+				terminationList = append(terminationList, *instance.Instances[0].InstanceId)
+			}
+		}
+	}
+
+	if ec2rampage {
+		for _, instance := range instances.Reservations {
+			if instance.Instances[0].State.Name == "running" {
+				isEc2go := false
+				for _, t := range instance.Instances[0].Tags {
+					if *t.Key == "ec2go" {
+						isEc2go = true
+					}
+				}
+				if isEc2go {
+					terminationList = append(terminationList, *instance.Instances[0].InstanceId)
+				}
+			}
+		}
+
+	}
+	terminateInstances(terminationList)
+}
+
+func listInstances(options ...ec2goListInstancesInterface) *ec2.DescribeInstancesOutput {
+	silent := false
+	for _, o := range options {
+		if o.silent {
+			silent = true
+		}
+	}
+
+	reservations, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{})
+	instances := make([]string, 0)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	fmt.Printf("%s - %-19s %-21s %-7s %s\n", "id", "instance id", "ami", "state", "tagged as ec2go")
-	for i, instance := range instances.Reservations {
-		isEc2go := "No"
-		for _, t := range instance.Instances[0].Tags {
-			if *t.Key == "qec2" {
-				isEc2go = "Yes"
-			}
-		}
+	if silent == false {
+		fmt.Printf("%-2s) - %-19s %-21s %-14s %s\n", "ID", "INSTANCE ID", "AMI", "STATE", "TAGGED AS EC2GO")
+		for i, instance := range reservations.Reservations {
+			isEc2go := "No"
+			instances = append(instances, *instance.Instances[0].InstanceId)
 
-		fmt.Printf("%d) - %s %s %s %s\n",
-			i,
-			*instance.Instances[0].InstanceId,
-			*instance.Instances[0].ImageId,
-			*&instance.Instances[0].State.Name,
-			isEc2go,
-		)
+			for _, t := range instance.Instances[0].Tags {
+				if *t.Key == "ec2go" {
+					isEc2go = "Yes"
+				}
+			}
+
+			fmt.Printf("%2d) - %s %s %-14s %s\n",
+				i,
+				*instance.Instances[0].InstanceId,
+				*instance.Instances[0].ImageId,
+				*&instance.Instances[0].State.Name,
+				isEc2go,
+			)
+		}
 	}
+	return reservations
 }
 
 func listModule() {
@@ -191,8 +279,7 @@ func connectToInstance(instanceId string) {
 	fmt.Println("IP Address = ", ip)
 
 	waitForSocket(ip, "22")
-
-	cmd := exec.Command("ssh", "-l", "admin", ip)
+	cmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", "-l", "admin", ip)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -377,7 +464,7 @@ func uploadKey(keyName string) {
 }
 
 func runInstance(ami string, keyName string, sgid string) string {
-	fmt.Println("Launching instance with ami ", ami)
+	fmt.Println("Launching instance with ami", ami)
 
 	tagspec := types.TagSpecification{
 		ResourceType: "instance",
@@ -391,7 +478,8 @@ func runInstance(ami string, keyName string, sgid string) string {
 				Value: aws.String("debian"),
 			},
 			{
-				Key: aws.String("ec2go"),
+				Key:   aws.String("ec2go"),
+				Value: aws.String("ec2go"),
 			},
 		},
 	}
