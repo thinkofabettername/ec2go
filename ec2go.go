@@ -22,6 +22,9 @@ import (
 )
 
 // globals
+var client *ec2.Client
+var tagKey string = "ec2go"
+
 var validModules []string = []string{
 	"run",
 	"terminate",
@@ -30,6 +33,13 @@ var validModules []string = []string{
 }
 
 func main() {
+
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+	client = ec2.NewFromConfig(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	var module string
 
 	if len(os.Args) > 1 {
@@ -53,14 +63,44 @@ func main() {
 		fmt.Printf("No module selected assuming run")
 	}
 
-	fmt.Println(module)
 	if module == "run" {
 		runModule()
+	} else if module == "list" {
+		listModule()
 	} else {
 		fmt.Println("Module not implemented yet, maybe you borked it?")
 		mainUsage()
 	}
 
+}
+
+func listInstances() {
+	instances, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{})
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	fmt.Printf("%s - %-19s %-21s %-7s %s\n", "id", "instance id", "ami", "state", "tagged as ec2go")
+	for i, instance := range instances.Reservations {
+		isEc2go := "No"
+		for _, t := range instance.Instances[0].Tags {
+			if *t.Key == "qec2" {
+				isEc2go = "Yes"
+			}
+		}
+
+		fmt.Printf("%d) - %s %s %s %s\n",
+			i,
+			*instance.Instances[0].InstanceId,
+			*instance.Instances[0].ImageId,
+			*&instance.Instances[0].State.Name,
+			isEc2go,
+		)
+	}
+}
+
+func listModule() {
+	listInstances()
 }
 
 func runModule() {
@@ -69,22 +109,14 @@ func runModule() {
 
 	var launchinstance bool = true
 
-	cfg, err := config.LoadDefaultConfig(context.TODO())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	client := ec2.NewFromConfig(cfg)
-
 	if launchinstance {
-		createSecurityGroup(sgName, client)
-		uploadKey(keyname, client)
-		imageid := getDebianId(client, "12")
-		instanceId := runInstance(imageid, keyname, getSecurityGroupId(sgName, client), client)
-		connectToInstance(instanceId, client)
+		createSecurityGroup(sgName)
+		uploadKey(keyname)
+		imageid := getDebianId("12")
+		instanceId := runInstance(imageid, keyname, getSecurityGroupId(sgName))
+		connectToInstance(instanceId)
 		println(instanceId)
 	}
-
 }
 
 func mainUsage() {
@@ -145,7 +177,7 @@ func waitForSocket(host string, port string) {
 	}
 }
 
-func connectToInstance(instanceId string, client *ec2.Client) {
+func connectToInstance(instanceId string) {
 	time.Sleep(time.Duration(time.Second * 5))
 	instance, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
 		InstanceIds: []string{instanceId},
@@ -170,14 +202,13 @@ func connectToInstance(instanceId string, client *ec2.Client) {
 	if err != nil {
 		log.Fatalln("ssh failed")
 	}
-	fmt.Println("After SSH")
 }
 
 func boolPointer(b bool) *bool {
 	return &b
 }
 
-func getDebianId(client *ec2.Client, version string) string {
+func getDebianId(version string) string {
 	images, err := client.DescribeImages(context.TODO(), &ec2.DescribeImagesInput{
 		Filters: []types.Filter{
 			{
@@ -203,7 +234,7 @@ func getDebianId(client *ec2.Client, version string) string {
 	return *images.Images[0].ImageId
 }
 
-func getSecurityGroupId(sgName string, client *ec2.Client) string {
+func getSecurityGroupId(sgName string) string {
 	sgOutput, err := client.DescribeSecurityGroups(context.TODO(), &ec2.DescribeSecurityGroupsInput{
 		GroupNames: []string{sgName},
 	})
@@ -230,8 +261,8 @@ func getSecurityGroupId(sgName string, client *ec2.Client) string {
 	return sgid
 }
 
-func createSecurityGroup(sgName string, client *ec2.Client) {
-	var sgid string = getSecurityGroupId(sgName, client)
+func createSecurityGroup(sgName string) {
+	var sgid string = getSecurityGroupId(sgName)
 
 	sgrOutput, err := client.DescribeSecurityGroupRules(context.TODO(), &ec2.DescribeSecurityGroupRulesInput{
 		Filters: []types.Filter{
@@ -309,7 +340,7 @@ func createSecurityGroup(sgName string, client *ec2.Client) {
 	}
 }
 
-func checkForDefaultKey(keyName string, client *ec2.Client) bool {
+func checkForDefaultKey(keyName string) bool {
 	result, err := client.DescribeKeyPairs(context.TODO(), &ec2.DescribeKeyPairsInput{
 		KeyNames: []string{keyName},
 	})
@@ -326,8 +357,8 @@ func checkForDefaultKey(keyName string, client *ec2.Client) bool {
 	}
 }
 
-func uploadKey(keyName string, client *ec2.Client) {
-	if !checkForDefaultKey(keyName, client) {
+func uploadKey(keyName string) {
+	if !checkForDefaultKey(keyName) {
 		contents, err := os.ReadFile("/home/michael/.ssh/id_rsa.pub")
 		if err != nil {
 			log.Fatal("error reading users public ssh key", err)
@@ -345,7 +376,7 @@ func uploadKey(keyName string, client *ec2.Client) {
 	}
 }
 
-func runInstance(ami string, keyName string, sgid string, client *ec2.Client) string {
+func runInstance(ami string, keyName string, sgid string) string {
 	fmt.Println("Launching instance with ami ", ami)
 
 	tagspec := types.TagSpecification{
@@ -358,6 +389,9 @@ func runInstance(ami string, keyName string, sgid string, client *ec2.Client) st
 			{
 				Key:   aws.String("distribution"),
 				Value: aws.String("debian"),
+			},
+			{
+				Key: aws.String("ec2go"),
 			},
 		},
 	}
