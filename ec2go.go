@@ -22,7 +22,48 @@ import (
 )
 
 // globals
+var validModules []string = []string{
+	"run",
+	"terminate",
+	"list",
+	"connect",
+}
+
 func main() {
+	var module string
+
+	if len(os.Args) > 1 {
+		found_module := false
+		for _, m := range validModules {
+			if m == os.Args[1] {
+				module = os.Args[1]
+				found_module = true
+			}
+		}
+		if !found_module {
+			fmt.Println("invalid module selected")
+			mainUsage()
+			os.Exit(1)
+		}
+	} else {
+		module = "run"
+	}
+
+	if module == "" {
+		fmt.Printf("No module selected assuming run")
+	}
+
+	fmt.Println(module)
+	if module == "run" {
+		runModule()
+	} else {
+		fmt.Println("Module not implemented yet, maybe you borked it?")
+		mainUsage()
+	}
+
+}
+
+func runModule() {
 	keyname := "default-key"
 	var sgName string = "ec2go"
 
@@ -43,6 +84,15 @@ func main() {
 		connectToInstance(instanceId, client)
 		println(instanceId)
 	}
+
+}
+
+func mainUsage() {
+	fmt.Print("Usage: ec2go <module>\nmodules:\n")
+	for _, m := range validModules {
+		fmt.Println("    ", m)
+	}
+	fmt.Print("\n")
 }
 
 func getUserData() string {
@@ -204,6 +254,7 @@ func createSecurityGroup(sgName string, client *ec2.Client) {
 				ruleFound = true
 			}
 		}
+
 		if ruleFound {
 			continue
 		}
