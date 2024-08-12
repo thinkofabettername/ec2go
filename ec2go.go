@@ -37,7 +37,10 @@ type ec2goListInstancesInterface struct {
 }
 
 func main() {
+	handleArgs1()
+}
 
+func handleArgs1() {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	client = ec2.NewFromConfig(cfg)
 	if err != nil {
@@ -73,16 +76,30 @@ func main() {
 		listModule()
 	} else if module == "terminate" {
 		terminateModule()
+	} else if module == "connect" {
+		connectModule()
 	} else {
 		fmt.Println("Module not implemented yet, maybe you borked it?")
 		mainUsage()
 	}
 }
 
+func connectModule() {
+	instances := listInstances()
+	var instanceid int
+	scanned, err := fmt.Scan(&instanceid)
+	if scanned != 1 || err != nil || instanceid < 0 || instanceid > len(instances.Reservations) {
+		log.Fatal("incorrect instance selection. Please enter id (0...n) of instance")
+	}
+	fmt.Println(instanceid)
+	connectInstanceId := instances.Reservations[instanceid].Instances[0].InstanceId
+
+	connectToInstance(*connectInstanceId)
+
+}
+
 func terminateInstances(instances []string) {
-	result, err := client.TerminateInstances(context.TODO(), &ec2.TerminateInstancesInput{
-		InstanceIds: instances,
-	})
+	result, err := client.TerminateInstances(context.TODO(), &ec2.TerminateInstancesInput{InstanceIds: instances})
 
 	if err != nil {
 		log.Fatal("terminating instances error:\n", err)
