@@ -14,7 +14,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	//"github.com/aws/aws-sdk-go-v2/internal/configsources"
+
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
@@ -36,52 +36,145 @@ type ec2goListInstancesInterface struct {
 	silent bool
 }
 
-func main() {
-	handleArgs1()
+type cliArgs struct {
+	modules       []string
+	rampages      []string
+	instanceTypes []string
+	regions       []string
+	helps         []string
 }
 
-func handleArgs1() {
+func stringIn(needle string, haystack []string) bool {
+	for _, h := range haystack {
+		if needle == h {
+			return true
+		}
+	}
+	return false
+}
+
+func main() {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
-	client = ec2.NewFromConfig(cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
+	client = ec2.NewFromConfig(cfg)
 
-	var module string
-
-	if len(os.Args) > 1 {
-		found_module := false
-		for _, m := range validModules {
-			if m == os.Args[1] {
-				module = os.Args[1]
-				found_module = true
-			}
-		}
-		if !found_module {
-			fmt.Println("invalid module selected")
-			mainUsage()
-			os.Exit(1)
-		}
-	} else {
-		module = "run"
-	}
-
-	if module == "" {
-		fmt.Printf("No module selected assuming run")
-	}
-
-	if module == "run" {
+	cargs := handleArgs()
+	if cargs.modules[0] == "run" {
 		runModule()
-	} else if module == "list" {
-		listModule()
-	} else if module == "terminate" {
-		terminateModule()
-	} else if module == "connect" {
+	} else if cargs.modules[0] == "connect" {
 		connectModule()
+	} else if cargs.modules[0] == "terminate" {
+		terminateModule()
+	} else if cargs.modules[0] == "list" {
+		listModule()
+	}
+}
+
+func validateRun(cargs cliArgs) bool {
+	fmt.Println("validating run")
+	if len(cargs.rampages) > 0 {
+		fmt.Println("rampages cannot be used with run")
+		return false
+	}
+	return true
+}
+
+func validateTerminate(cargs cliArgs) bool {
+	if len(cargs.instanceTypes) > 0 {
+		fmt.Println("-i should only be used with run module")
+		return false
+	}
+	return true
+}
+
+func validateArgs(cargs cliArgs) bool {
+
+	if len(cargs.modules) != 1 {
+		fmt.Println("Only 1 module should be selected.")
+		return false
+	}
+	if len(cargs.rampages) > 1 {
+		fmt.Println("Only 1 rampage type should be selected.")
+		return false
+	}
+	if len(cargs.regions) > 1 {
+		fmt.Println("Only 1 region type should be selected.")
+		return false
+	}
+	if len(cargs.instanceTypes) > 1 {
+		fmt.Println("Only 1 instance type should be selected.")
+		return false
+	}
+
+	if cargs.modules[0] == "run" {
+		if !validateRun(cargs) {
+			return false
+		}
+	} else if cargs.modules[0] == "terminate" {
+		if !validateTerminate(cargs) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func handleArgs() cliArgs {
+	var cargs cliArgs
+	args := os.Args[:]
+
+	if len(os.Args) == 1 {
+		cargs.modules = append(cargs.modules, "run")
+	} else if stringIn(args[1], validModules) {
+		cargs.modules = append(cargs.modules, args[1])
+		args = args[2:]
 	} else {
-		fmt.Println("Module not implemented yet, maybe you borked it?")
+		log.Println("Invalid module")
 		mainUsage()
 	}
+
+	for {
+		fmt.Println("args =", args)
+		if len(args) <= 0 {
+			break
+		}
+		if stringIn(args[0], validModules) {
+			cargs.modules = append(cargs.modules, args[0])
+		} else if args[0] == "-i" {
+			if len(args) < 2 {
+				log.Fatalln("Argument must be specified after -i")
+			}
+			cargs.instanceTypes = append(cargs.instanceTypes, args[1])
+			args = args[1:]
+			fmt.Println("setting instance type")
+		} else if args[0] == "-r" {
+			if len(args) < 2 {
+				log.Fatalln("Argument must be specified after -r")
+			}
+			cargs.regions = append(cargs.regions, args[1])
+			args = args[1:]
+			fmt.Println("setting region")
+		} else if stringIn(args[0], []string{"--rampage", "--RAMPAGE"}) {
+			cargs.rampages = append(cargs.rampages, args[0])
+		} else if stringIn(args[0], []string{"-h", "--help"}) {
+
+		}
+		args = args[1:]
+	}
+
+	if len(cargs.modules) != 1 {
+		fmt.Println("More than one module selected")
+		mainUsage()
+	}
+	fmt.Printf("%+v\n", cargs)
+	if !validateArgs(cargs) {
+		fmt.Println("Invalid arguments")
+		mainUsage()
+		os.Exit(1)
+	}
+	return cargs
 }
 
 func connectModule() {
@@ -163,7 +256,11 @@ func terminateModule() {
 		}
 
 	}
-	terminateInstances(terminationList)
+	if len(terminationList) > 0 {
+		terminateInstances(terminationList)
+	} else {
+		fmt.Println("No instances to terminate... rampage was short")
+	}
 }
 
 func listInstances(options ...ec2goListInstancesInterface) *ec2.DescribeInstancesOutput {
@@ -230,6 +327,10 @@ func mainUsage() {
 		fmt.Println("    ", m)
 	}
 	fmt.Print("\n")
+}
+
+func runUsage() {
+	fmt.Println(`Usage: ec2go run -i <instance type> -r <region>`)
 }
 
 func getUserData() string {
