@@ -214,7 +214,7 @@ func terminateModule() {
 		fmt.Println("\"Terminating\" instance ", *instances.Reservations[instanceToTerminate].Instances[0].InstanceId)
 		terminateInstances([]string{*instances.Reservations[instanceToTerminate].Instances[0].InstanceId})
 	} else if len(os.Args) == 3 {
-		if os.Args[2] == "--rampage" {
+		if os.Args[2] == "--rampage" || os.Args[2] == "-a" {
 			fmt.Print("!!! RAMPAGE !!! - all instances (tagged with ec2go) will be terminated\n")
 			instances = listInstances(ec2goListInstancesInterface{silent: true})
 			ec2rampage = true
