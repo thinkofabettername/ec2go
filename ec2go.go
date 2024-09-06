@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -24,6 +25,7 @@ import (
 // globals
 var client *ec2.Client
 var tagKey string = "ec2go"
+var cargs cliArgs
 
 var validModules []string = []string{
 	"run",
@@ -42,6 +44,7 @@ type cliArgs struct {
 	instanceTypes []string
 	regions       []string
 	helps         []string
+	distros       []string
 }
 
 func stringIn(needle string, haystack []string) bool {
@@ -60,7 +63,7 @@ func main() {
 	}
 	client = ec2.NewFromConfig(cfg)
 
-	cargs := handleArgs()
+	cargs = handleArgs()
 	if cargs.modules[0] == "run" {
 		runModule(cargs)
 	} else if cargs.modules[0] == "connect" {
@@ -70,6 +73,14 @@ func main() {
 	} else if cargs.modules[0] == "list" {
 		listModule()
 	}
+}
+
+func getHome() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal("could not obtain home directory", err)
+	}
+	return homeDir
 }
 
 func validateRun(cargs cliArgs) bool {
@@ -142,6 +153,13 @@ func handleArgs() cliArgs {
 		}
 		if stringIn(args[0], validModules) {
 			cargs.modules = append(cargs.modules, args[0])
+		} else if args[0] == "-d" {
+			if len(args) < 2 {
+				log.Fatalln("Argument must be specified after -d")
+			}
+			cargs.distros = append(cargs.distros, args[1])
+			args = args[1:]
+			fmt.Println("setting distribution")
 		} else if args[0] == "-i" {
 			if len(args) < 2 {
 				log.Fatalln("Argument must be specified after -i")
@@ -278,7 +296,9 @@ func listInstances(options ...ec2goListInstancesInterface) *ec2.DescribeInstance
 	}
 
 	if silent == false {
-		fmt.Printf("%-2s) - %-19s %-21s %-14s %s\n", "ID", "INSTANCE ID", "AMI", "STATE", "TAGGED AS EC2GO")
+		//fmt.Printf("%-2s) - %-19s %-21s  %-20s %-14s %s\n",
+		fmt.Printf("%-2s) - %-19s %-11s  %-21s %-14s %s\n",
+			"ID", "INSTANCE ID", "IP", "AMI", "STATE", "TAGGED AS EC2GO")
 		for i, instance := range reservations.Reservations {
 			isEc2go := "No"
 			instances = append(instances, *instance.Instances[0].InstanceId)
@@ -289,9 +309,18 @@ func listInstances(options ...ec2goListInstancesInterface) *ec2.DescribeInstance
 				}
 			}
 
-			fmt.Printf("%2d) - %s %s %-14s %s\n",
+			//publicIp := *&instance.Instances[0].PublicIpAddress
+			var publicIp string
+			if instance.Instances[0].PublicIpAddress != nil {
+				publicIp = *instance.Instances[0].PublicIpAddress
+			}
+
+			//fmt.Println("publicip ", publicIp)
+
+			fmt.Printf("%2d) - %s %12s %-13s %-14s %s\n",
 				i,
 				*instance.Instances[0].InstanceId,
+				publicIp,
 				*instance.Instances[0].ImageId,
 				*&instance.Instances[0].State.Name,
 				isEc2go,
@@ -306,23 +335,42 @@ func listModule() {
 }
 
 func runModule(cargs cliArgs) {
-	keyname := "default-key"
+	keyName := ""
 	var sgName string = "ec2go"
-
+	distro := "debian"
 	var launchinstance bool = true
 	var instanceType string
 	if len(cargs.instanceTypes) == 1 {
 		instanceType = cargs.instanceTypes[0]
 	} else {
-
 		instanceType = "t3.micro"
 	}
 
+	if len(cargs.distros) > 1 {
+		log.Fatal("Only 1 distribution can be selected")
+	} else if len(cargs.distros) == 1 {
+		distro = cargs.distros[0]
+	}
+
+	if distro != "windows" {
+		keyName = "default-key"
+	} else {
+		keyName = "ec2go"
+	}
+
+	ami := ""
+
+	if distro == "debian" {
+		ami = getDebianId("12")
+	} else if distro == "windows" || distro == "winderz" {
+		ami = getWindowsId("2022")
+		fmt.Println(ami)
+	}
 	if launchinstance {
 		createSecurityGroup(sgName)
-		uploadKey(keyname)
-		imageid := getDebianId("12")
-		instanceId := runInstance(imageid, keyname, getSecurityGroupId(sgName), instanceType)
+		uploadKey(keyName)
+		imageid := ami
+		instanceId := runInstance(imageid, keyName, getSecurityGroupId(sgName), instanceType)
 		connectToInstance(instanceId)
 		println(instanceId)
 	}
@@ -390,8 +438,55 @@ func waitForSocket(host string, port string) {
 	}
 }
 
+func getWindowsPassword(instanceId string) string {
+	fmt.Println("getting windows password")
+
+	var passwordData *ec2.GetPasswordDataOutput
+	var err error
+	var attempts = 26
+	var password string
+	sleeptime := 10
+
+	for attempts > 0 {
+		passwordData, err = client.GetPasswordData(context.TODO(), &ec2.GetPasswordDataInput{
+			InstanceId: aws.String(instanceId),
+		})
+		if err != nil {
+			log.Fatal("coult not retrieve password data", err)
+		}
+
+		if *passwordData.PasswordData != "" {
+			password = *passwordData.PasswordData
+			break
+		}
+		time.Sleep(time.Duration(sleeptime) * time.Second)
+		attempts--
+		fmt.Println("This can take some time sleeping for ", sleeptime, " seconds")
+	}
+
+	cmd := exec.Command("openssl", "pkeyutl", "-decrypt", "-inkey", getHome()+"/.ssh/ec2go")
+	var out bytes.Buffer
+	var in bytes.Buffer
+	var error bytes.Buffer
+	in = *bytes.NewBuffer([]byte(password))
+	passdata, err := base64.StdEncoding.DecodeString(password)
+	in = *bytes.NewBuffer(passdata)
+
+	cmd.Stdout = &out
+	cmd.Stdin = &in
+	cmd.Stderr = &error
+	err = cmd.Run()
+	if err != nil {
+		fmt.Println("error is", error.String())
+		log.Fatal(err)
+	}
+
+	return out.String()
+}
+
 func connectToInstance(instanceId string) {
 	time.Sleep(time.Duration(time.Second * 5))
+	port := "22"
 	instance, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
 		InstanceIds: []string{instanceId},
 	})
@@ -401,23 +496,99 @@ func connectToInstance(instanceId string) {
 	}
 
 	ip := *instance.Reservations[0].Instances[0].PublicIpAddress
+
+	instanceOs := "linux"
+
+	//	fmt.Println("tags = ", *&instance.Reservations[0].Instances[0].Tags)
+	for _, t := range *&instance.Reservations[0].Instances[0].Tags {
+		fmt.Printf("t.key = %s, t.val = %s\n\n", *t.Key, *t.Value)
+		if *t.Key == "distribution" {
+			if *t.Value == "windows" {
+				fmt.Println("\n\n!!! setting intsance os to windows ")
+				instanceOs = "windows"
+				port = "3389"
+			}
+		}
+	}
+
+	var winpass string
+	fmt.Println("!!!instance os!!!", instanceOs)
+	if instanceOs == "windows" {
+		winpass = getWindowsPassword(instanceId)
+		fmt.Println("winpass = ", winpass)
+		//remmina -c rdp://administrator:'U.ZATNk8Ym3LqjFFX2buBV*py;4(=$o5'@3.27.255.13
+
+		//cmd := exec.Command("remmina", "--encrypt-password", winpass)
+		//var out bytes.Buffer
+		//cmd.Stdout = &out
+		//err := cmd.Run()
+		//if err != nil {
+		//	log.Fatal(err)
+		//}
+		//fmt.Printf("the hostname is %s", out.String())
+		//fmt.Printf("Fuck this is alot of work\n")
+
+		fmt.Println("remmina", "-c", "rdp://administrator:'"+winpass+"'@"+ip)
+
+		cmd := exec.Command("remmina", "-c", "'rdp://administrator:"+winpass+"@"+ip+"'")
+
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		fmt.Println("Attemtping to connect with remmina")
+		cmd.Run()
+	}
 	fmt.Println("IP Address = ", ip)
 
-	waitForSocket(ip, "22")
-	cmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", "-l", "admin", ip)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	if instanceOs == "linux" {
+		waitForSocket(ip, port)
+		cmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", "-l", "admin", ip)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 
-	err = cmd.Run() // add error checking
+		err = cmd.Run() // add error checking
 
-	if err != nil {
-		log.Fatalln("!! ssh exited with non zero status !!")
+		if err != nil {
+			log.Fatalln("!! ssh exited with non zero status !!")
+		}
 	}
 }
 
 func boolPointer(b bool) *bool {
 	return &b
+}
+
+func getWindowsId(version string) string {
+	fmt.Println(version)
+	if version == "" {
+		version = "2022"
+	}
+	searchString := "*Windows_Server-" + version + "-English-Full-Base*"
+
+	images, err := client.DescribeImages(context.TODO(), &ec2.DescribeImagesInput{
+		Filters: []types.Filter{
+			{
+				Name:   aws.String("name"),
+				Values: []string{searchString},
+			},
+			{
+				Name:   aws.String("architecture"),
+				Values: []string{"x86_64"},
+			},
+		},
+		IncludeDeprecated: boolPointer(true),
+	})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	sort.Slice(images.Images, func(i, j int) bool {
+		return *images.Images[i].CreationDate > *images.Images[j].CreationDate
+	})
+
+	return *images.Images[0].ImageId
 }
 
 func getDebianId(version string) string {
@@ -489,7 +660,7 @@ func createSecurityGroup(sgName string) {
 		log.Fatal(err)
 	}
 
-	var tcpPorts = [4]int32{22, 8080, 8000, 5201}
+	var tcpPorts = [5]int32{22, 8080, 8000, 5201, 3389}
 	for _, portNum := range tcpPorts {
 		ruleFound := false
 		for _, securityGroupRule := range sgrOutput.SecurityGroupRules {
@@ -570,13 +741,21 @@ func checkForDefaultKey(keyName string) bool {
 }
 
 func uploadKey(keyName string) {
+	keyFile := ".ssh/id_rsa.pub"
+	if cargs.distros[0] == "windows" {
+		keyFile = "/.ssh/ec2go.pub"
+	}
 	if !checkForDefaultKey(keyName) {
-		contents, err := os.ReadFile("/home/michael/.ssh/id_rsa.pub")
+		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			log.Fatal("error reading users public ssh key", err)
+			log.Fatal("could not obtain home directory", err)
+		}
+		contents, err := os.ReadFile(homeDir + keyFile)
+		if err != nil {
+			log.Fatal("error reading users public ssh key. Key name", keyName, err, "\nTo Generate a key run \"ssh-keygen -t rsa -m pem -f ~/.ssh/ec2go\"")
 		}
 
-		output, importErr := client.ImportKeyPair(context.TODO(), &ec2.ImportKeyPairInput{
+		_, importErr := client.ImportKeyPair(context.TODO(), &ec2.ImportKeyPairInput{
 			KeyName:           aws.String(keyName),
 			PublicKeyMaterial: contents,
 		})
@@ -584,12 +763,12 @@ func uploadKey(keyName string) {
 		if importErr != nil {
 			log.Fatal("error uploading users public ssh key", importErr)
 		}
-		fmt.Print(output)
 	}
 }
 
 func runInstance(ami string, keyName string, sgid string, instanceType string) string {
 	fmt.Println("Launching instance with ami", ami)
+	fmt.Println("cargs = ", cargs)
 
 	tagspec := types.TagSpecification{
 		ResourceType: "instance",
@@ -600,7 +779,7 @@ func runInstance(ami string, keyName string, sgid string, instanceType string) s
 			},
 			{
 				Key:   aws.String("distribution"),
-				Value: aws.String("debian"),
+				Value: aws.String(cargs.distros[0]),
 			},
 			{
 				Key:   aws.String("ec2go"),
