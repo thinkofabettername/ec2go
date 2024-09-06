@@ -62,7 +62,7 @@ func main() {
 
 	cargs := handleArgs()
 	if cargs.modules[0] == "run" {
-		runModule()
+		runModule(cargs)
 	} else if cargs.modules[0] == "connect" {
 		connectModule()
 	} else if cargs.modules[0] == "terminate" {
@@ -305,17 +305,24 @@ func listModule() {
 	listInstances()
 }
 
-func runModule() {
+func runModule(cargs cliArgs) {
 	keyname := "default-key"
 	var sgName string = "ec2go"
 
 	var launchinstance bool = true
+	var instanceType string
+	if len(cargs.instanceTypes) == 1 {
+		instanceType = cargs.instanceTypes[0]
+	} else {
+
+		instanceType = "t3.micro"
+	}
 
 	if launchinstance {
 		createSecurityGroup(sgName)
 		uploadKey(keyname)
 		imageid := getDebianId("12")
-		instanceId := runInstance(imageid, keyname, getSecurityGroupId(sgName))
+		instanceId := runInstance(imageid, keyname, getSecurityGroupId(sgName), instanceType)
 		connectToInstance(instanceId)
 		println(instanceId)
 	}
@@ -405,7 +412,7 @@ func connectToInstance(instanceId string) {
 	err = cmd.Run() // add error checking
 
 	if err != nil {
-		log.Fatalln("ssh failed")
+		log.Fatalln("!! ssh exited with non zero status !!")
 	}
 }
 
@@ -581,7 +588,7 @@ func uploadKey(keyName string) {
 	}
 }
 
-func runInstance(ami string, keyName string, sgid string) string {
+func runInstance(ami string, keyName string, sgid string, instanceType string) string {
 	fmt.Println("Launching instance with ami", ami)
 
 	tagspec := types.TagSpecification{
@@ -608,7 +615,7 @@ func runInstance(ami string, keyName string, sgid string) string {
 		context.TODO(),
 		&ec2.RunInstancesInput{
 			ImageId:           aws.String(ami),
-			InstanceType:      "t3.micro",
+			InstanceType:      types.InstanceType(instanceType),
 			MaxCount:          aws.Int32(1),
 			MinCount:          aws.Int32(1),
 			TagSpecifications: []types.TagSpecification{tagspec},
