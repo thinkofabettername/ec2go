@@ -73,7 +73,6 @@ func main() {
 }
 
 func validateRun(cargs cliArgs) bool {
-	fmt.Println("validating run")
 	if len(cargs.rampages) > 0 {
 		fmt.Println("rampages cannot be used with run")
 		return false
@@ -90,7 +89,10 @@ func validateTerminate(cargs cliArgs) bool {
 }
 
 func validateArgs(cargs cliArgs) bool {
-
+	if len(cargs.modules) == 0 {
+		fmt.Println("At least 1 module should be selected.")
+		return false
+	}
 	if len(cargs.modules) != 1 {
 		fmt.Println("Only 1 module should be selected.")
 		return false
@@ -132,11 +134,9 @@ func handleArgs() cliArgs {
 		args = args[2:]
 	} else {
 		log.Println("Invalid module")
-		mainUsage()
 	}
 
 	for {
-		fmt.Println("args =", args)
 		if len(args) <= 0 {
 			break
 		}
@@ -163,12 +163,11 @@ func handleArgs() cliArgs {
 		}
 		args = args[1:]
 	}
-
-	if len(cargs.modules) != 1 {
+	if len(cargs.modules) > 1 {
 		fmt.Println("More than one module selected")
 		mainUsage()
 	}
-	fmt.Printf("%+v\n", cargs)
+
 	if !validateArgs(cargs) {
 		fmt.Println("Invalid arguments")
 		mainUsage()
@@ -184,7 +183,6 @@ func connectModule() {
 	if scanned != 1 || err != nil || instanceid < 0 || instanceid > len(instances.Reservations) {
 		log.Fatal("incorrect instance selection. Please enter id (0...n) of instance")
 	}
-	fmt.Println(instanceid)
 	connectInstanceId := instances.Reservations[instanceid].Instances[0].InstanceId
 
 	connectToInstance(*connectInstanceId)
@@ -256,10 +254,12 @@ func terminateModule() {
 		}
 
 	}
-	if len(terminationList) > 0 {
-		terminateInstances(terminationList)
-	} else {
-		fmt.Println("No instances to terminate... rampage was short")
+	if ec2rampage || rampage {
+		if len(terminationList) > 0 {
+			terminateInstances(terminationList)
+		} else {
+			fmt.Println("No instances to terminate... rampage was short")
+		}
 	}
 }
 
