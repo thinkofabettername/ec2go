@@ -21,3 +21,7 @@ func getHome() string {
 	}
 	return homeDir
 }
+
+func boolPointer(b bool) *bool {
+	return &b
+}
