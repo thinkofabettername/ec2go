@@ -1,5 +1,7 @@
 package main
 
+// test
+
 import (
 	"bytes"
 	"context"
@@ -10,7 +12,9 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -26,6 +30,7 @@ import (
 var client *ec2.Client
 var tagKey string = "ec2go"
 var cargs cliArgs
+var starttime = time.Now().Unix()
 
 var validModules []string = []string{
 	"run",
@@ -47,23 +52,25 @@ type cliArgs struct {
 	distros       []string
 }
 
-func stringIn(needle string, haystack []string) bool {
-	for _, h := range haystack {
-		if needle == h {
-			return true
-		}
-	}
-	return false
-}
-
 func main() {
-	cfg, err := config.LoadDefaultConfig(context.TODO())
-	if err != nil {
-		log.Fatal(err)
-	}
-	client = ec2.NewFromConfig(cfg)
 
 	cargs = handleArgs()
+
+	if len(cargs.regions) == 1 {
+		cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(cargs.regions[0]))
+		if err != nil {
+			log.Fatal(err)
+		}
+		client = ec2.NewFromConfig(cfg)
+
+	} else {
+		cfg, err := config.LoadDefaultConfig(context.TODO())
+		if err != nil {
+			log.Fatal(err)
+		}
+		client = ec2.NewFromConfig(cfg)
+	}
+
 	if cargs.modules[0] == "run" {
 		runModule(cargs)
 	} else if cargs.modules[0] == "connect" {
@@ -75,25 +82,9 @@ func main() {
 	}
 }
 
-func getHome() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatal("could not obtain home directory", err)
-	}
-	return homeDir
-}
-
 func validateRun(cargs cliArgs) bool {
 	if len(cargs.rampages) > 0 {
 		fmt.Println("rampages cannot be used with run")
-		return false
-	}
-	return true
-}
-
-func validateTerminate(cargs cliArgs) bool {
-	if len(cargs.instanceTypes) > 0 {
-		fmt.Println("-i should only be used with run module")
 		return false
 	}
 	return true
@@ -191,6 +182,11 @@ func handleArgs() cliArgs {
 		mainUsage()
 		os.Exit(1)
 	}
+
+	if len(cargs.distros) == 0 {
+		cargs.distros = append(cargs.distros, "debian")
+	}
+
 	return cargs
 }
 
@@ -205,133 +201,6 @@ func connectModule() {
 
 	connectToInstance(*connectInstanceId)
 
-}
-
-func terminateInstances(instances []string) {
-	result, err := client.TerminateInstances(context.TODO(), &ec2.TerminateInstancesInput{InstanceIds: instances})
-
-	if err != nil {
-		log.Fatal("terminating instances error:\n", err)
-	}
-
-	for _, instance := range result.TerminatingInstances {
-		fmt.Printf("Terminating instance %s\n", *instance.InstanceId)
-
-	}
-}
-
-func terminateModule() {
-	var instances *ec2.DescribeInstancesOutput
-	ec2rampage := false
-	rampage := false
-	if len(os.Args) == 2 {
-		fmt.Printf("Please select an instance to terminate")
-		instances = listInstances(ec2goListInstancesInterface{silent: false})
-		var instanceToTerminate int
-		fmt.Scan(&instanceToTerminate)
-		fmt.Println("\"Terminating\" instance ", *instances.Reservations[instanceToTerminate].Instances[0].InstanceId)
-		terminateInstances([]string{*instances.Reservations[instanceToTerminate].Instances[0].InstanceId})
-	} else if len(os.Args) == 3 {
-		if os.Args[2] == "--rampage" || os.Args[2] == "-a" {
-			fmt.Print("!!! RAMPAGE !!! - all instances (tagged with ec2go) will be terminated\n")
-			instances = listInstances(ec2goListInstancesInterface{silent: true})
-			ec2rampage = true
-		}
-		if os.Args[2] == "--RAMPAGE" {
-			fmt.Print("!!! RAMPAGE !!! - all instances will be terminated\n")
-			instances = listInstances(ec2goListInstancesInterface{silent: true})
-			rampage = true
-		}
-	} else {
-		log.Fatal("Error terminate modules takes no arguments or one of --rampage or --RAMPAGE")
-	}
-
-	var terminationList []string = make([]string, 0)
-
-	if rampage {
-		for _, instance := range instances.Reservations {
-			if instance.Instances[0].State.Name == "running" {
-				terminationList = append(terminationList, *instance.Instances[0].InstanceId)
-			}
-		}
-	}
-
-	if ec2rampage {
-		for _, instance := range instances.Reservations {
-			if instance.Instances[0].State.Name == "running" {
-				isEc2go := false
-				for _, t := range instance.Instances[0].Tags {
-					if *t.Key == "ec2go" {
-						isEc2go = true
-					}
-				}
-				if isEc2go {
-					terminationList = append(terminationList, *instance.Instances[0].InstanceId)
-				}
-			}
-		}
-
-	}
-	if ec2rampage || rampage {
-		if len(terminationList) > 0 {
-			terminateInstances(terminationList)
-		} else {
-			fmt.Println("No instances to terminate... rampage was short")
-		}
-	}
-}
-
-func listInstances(options ...ec2goListInstancesInterface) *ec2.DescribeInstancesOutput {
-	silent := false
-	for _, o := range options {
-		if o.silent {
-			silent = true
-		}
-	}
-
-	reservations, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{})
-	instances := make([]string, 0)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	if silent == false {
-		//fmt.Printf("%-2s) - %-19s %-21s  %-20s %-14s %s\n",
-		fmt.Printf("%-2s) - %-19s %-11s  %-21s %-14s %s\n",
-			"ID", "INSTANCE ID", "IP", "AMI", "STATE", "TAGGED AS EC2GO")
-		for i, instance := range reservations.Reservations {
-			isEc2go := "No"
-			instances = append(instances, *instance.Instances[0].InstanceId)
-
-			for _, t := range instance.Instances[0].Tags {
-				if *t.Key == "ec2go" {
-					isEc2go = "Yes"
-				}
-			}
-
-			//publicIp := *&instance.Instances[0].PublicIpAddress
-			var publicIp string
-			if instance.Instances[0].PublicIpAddress != nil {
-				publicIp = *instance.Instances[0].PublicIpAddress
-			}
-
-			//fmt.Println("publicip ", publicIp)
-
-			fmt.Printf("%2d) - %s %12s %-13s %-14s %s\n",
-				i,
-				*instance.Instances[0].InstanceId,
-				publicIp,
-				*instance.Instances[0].ImageId,
-				*&instance.Instances[0].State.Name,
-				isEc2go,
-			)
-		}
-	}
-	return reservations
-}
-
-func listModule() {
-	listInstances()
 }
 
 func runModule(cargs cliArgs) {
@@ -438,6 +307,23 @@ func waitForSocket(host string, port string) {
 	}
 }
 
+func encryptPass(pass string) string {
+	cmd := exec.Command("remmina", "--encrypt-password")
+	var out bytes.Buffer
+	var in bytes.Buffer = *bytes.NewBuffer([]byte(pass))
+	var error bytes.Buffer
+
+	cmd.Stdin = &in
+	cmd.Stdout = &out
+	cmd.Stderr = &error
+	cmd.Run()
+
+	regex := "(?m)^Encrypted password: (.*$)"
+	re := regexp.MustCompile(regex)
+	match := re.Find([]byte(out.String()))
+	return strings.Replace(string(match), "Encrypted password: ", "", 10)
+}
+
 func getWindowsPassword(instanceId string) string {
 	fmt.Println("getting windows password")
 
@@ -514,23 +400,12 @@ func connectToInstance(instanceId string) {
 	var winpass string
 	fmt.Println("!!!instance os!!!", instanceOs)
 	if instanceOs == "windows" {
-		winpass = getWindowsPassword(instanceId)
+		winpass = encryptPass(getWindowsPassword(instanceId))
 		fmt.Println("winpass = ", winpass)
-		//remmina -c rdp://administrator:'U.ZATNk8Ym3LqjFFX2buBV*py;4(=$o5'@3.27.255.13
-
-		//cmd := exec.Command("remmina", "--encrypt-password", winpass)
-		//var out bytes.Buffer
-		//cmd.Stdout = &out
-		//err := cmd.Run()
-		//if err != nil {
-		//	log.Fatal(err)
-		//}
-		//fmt.Printf("the hostname is %s", out.String())
-		//fmt.Printf("Fuck this is alot of work\n")
 
 		fmt.Println("remmina", "-c", "rdp://administrator:'"+winpass+"'@"+ip)
 
-		cmd := exec.Command("remmina", "-c", "'rdp://administrator:"+winpass+"@"+ip+"'")
+		cmd := exec.Command("remmina", "-c", "rdp://administrator:"+winpass+"@"+ip+"")
 
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -564,7 +439,7 @@ func getWindowsId(version string) string {
 	if version == "" {
 		version = "2022"
 	}
-	searchString := "*Windows_Server-" + version + "-English-Full-Base*"
+	searchString := "Windows_Server-" + version + "-English-Full-Base*"
 
 	images, err := client.DescribeImages(context.TODO(), &ec2.DescribeImagesInput{
 		Filters: []types.Filter{
@@ -576,6 +451,14 @@ func getWindowsId(version string) string {
 				Name:   aws.String("architecture"),
 				Values: []string{"x86_64"},
 			},
+			{
+				Name:   aws.String("description"),
+				Values: []string{"Microsoft Windows Server " + version + " Full Locale English AMI provided by Amazon"},
+			},
+			//{
+			//	Name:   aws.String("ImageLocation"),
+			//	Values: []string{"amazon*"},
+			//},
 		},
 		IncludeDeprecated: boolPointer(true),
 	})
@@ -741,9 +624,11 @@ func checkForDefaultKey(keyName string) bool {
 }
 
 func uploadKey(keyName string) {
-	keyFile := ".ssh/id_rsa.pub"
-	if cargs.distros[0] == "windows" {
-		keyFile = "/.ssh/ec2go.pub"
+	keyFile := "/.ssh/id_rsa.pub"
+	if len(cargs.distros) > 0 {
+		if cargs.distros[0] == "windows" {
+			keyFile = "/.ssh/ec2go.pub"
+		}
 	}
 	if !checkForDefaultKey(keyName) {
 		homeDir, err := os.UserHomeDir()
@@ -790,6 +675,7 @@ func runInstance(ami string, keyName string, sgid string, instanceType string) s
 
 	userdata := getUserData()
 
+	fmt.Println("time to runinstance = %d", time.Now().Unix()-starttime)
 	output, err := client.RunInstances(
 		context.TODO(),
 		&ec2.RunInstancesInput{
