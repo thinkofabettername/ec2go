@@ -44,9 +44,7 @@ func connectToInstance(instanceId string) {
 
 	instanceOs := "linux"
 
-	//	fmt.Println("tags = ", *&instance.Reservations[0].Instances[0].Tags)
 	for _, t := range *&instance.Reservations[0].Instances[0].Tags {
-		fmt.Printf("t.key = %s, t.val = %s\n\n", *t.Key, *t.Value)
 		if *t.Key == "distribution" {
 			if *t.Value == "windows" {
 				fmt.Println("\n\n!!! setting intsance os to windows ")
@@ -57,7 +55,7 @@ func connectToInstance(instanceId string) {
 	}
 
 	var winpass string
-	fmt.Println("!!!instance os!!!", instanceOs)
+	fmt.Println("instance os = ", instanceOs)
 	if instanceOs == "windows" {
 		winpass = encryptPass(getWindowsPassword(instanceId))
 		fmt.Println("winpass = ", winpass)

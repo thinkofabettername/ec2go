@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"log"
-	"os"
+	//"os"
 )
 
 func validateTerminate(cargs cliArgs) bool {
@@ -30,32 +30,48 @@ func terminateInstances(instances []string) {
 }
 
 func terminateModule() {
+
 	var instances *ec2.DescribeInstancesOutput
 	ec2rampage := false
 	rampage := false
-	if len(os.Args) == 2 {
-		fmt.Printf("Please select an instance to terminate")
+
+	if len(cargs.rampages) > 1 {
+		log.Fatal("Only 1 rampage can be specified")
+	} else if len(cargs.rampages) == 0 {
 		instances = listInstances(ec2goListInstancesInterface{silent: false})
+		fmt.Printf("Please select an instance to terminate:")
 		var instanceToTerminate int
 		fmt.Scan(&instanceToTerminate)
-		fmt.Println("\"Terminating\" instance ", *instances.Reservations[instanceToTerminate].Instances[0].InstanceId)
 		terminateInstances([]string{*instances.Reservations[instanceToTerminate].Instances[0].InstanceId})
-	} else if len(os.Args) == 3 {
-		if os.Args[2] == "--rampage" || os.Args[2] == "-a" {
-			fmt.Print("!!! RAMPAGE !!! - all instances (tagged with ec2go) will be terminated\n")
-			instances = listInstances(ec2goListInstancesInterface{silent: true})
-			ec2rampage = true
-		}
-		if os.Args[2] == "--RAMPAGE" {
-			fmt.Print("!!! RAMPAGE !!! - all instances will be terminated\n")
-			instances = listInstances(ec2goListInstancesInterface{silent: true})
-			rampage = true
-		}
-	} else {
-		fmt.Println("Need to fix terminate module to deal with regions better")
+		return
+	}
+	if cargs.rampages[0] == "--rampage" {
+		fmt.Print("!!! RAMPAGE !!! - all instances (tagged with ec2go) will be terminated\n")
+		instances = listInstances(ec2goListInstancesInterface{silent: true})
+		ec2rampage = true
+	}
+	if cargs.rampages[0] == "--RAMPAGE" {
+		fmt.Print("!!! RAMPAGE !!! - all instances will be terminated\n")
+		instances = listInstances(ec2goListInstancesInterface{silent: true})
+		rampage = true
 	}
 
 	var terminationList []string = make([]string, 0)
+
+	//else if len(os.Args) == 3 {
+	//	if os.Args[2] == "--rampage" || os.Args[2] == "-a" {
+	//		fmt.Print("!!! RAMPAGE !!! - all instances (tagged with ec2go) will be terminated\n")
+	//		instances = listInstances(ec2goListInstancesInterface{silent: true})
+	//		ec2rampage = true
+	//	}
+	//	if os.Args[2] == "--RAMPAGE" {
+	//		fmt.Print("!!! RAMPAGE !!! - all instances will be terminated\n")
+	//		instances = listInstances(ec2goListInstancesInterface{silent: true})
+	//		rampage = true
+	//	}
+	//} else {
+	//	fmt.Println("Need to fix terminate module to deal with regions better")
+	//}
 
 	if rampage {
 		for _, instance := range instances.Reservations {

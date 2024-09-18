@@ -336,7 +336,6 @@ func uploadKey(keyName string) {
 
 func runInstance(ami string, keyName string, sgid string, instanceType string) string {
 	fmt.Println("Launching instance with ami", ami)
-	fmt.Println("cargs = ", cargs)
 
 	tagspec := types.TagSpecification{
 		ResourceType: "instance",
@@ -358,7 +357,7 @@ func runInstance(ami string, keyName string, sgid string, instanceType string) s
 
 	userdata := getUserData()
 
-	fmt.Println("time to runinstance = %d", time.Now().Unix()-starttime)
+	fmt.Println("time to runinstance = ", time.Now().Unix()-starttime)
 	output, err := client.RunInstances(
 		context.TODO(),
 		&ec2.RunInstancesInput{
