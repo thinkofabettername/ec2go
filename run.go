@@ -82,7 +82,6 @@ func runModule(cargs cliArgs) {
 		ami = getDebianId("12")
 	} else if distro == "windows" || distro == "winderz" {
 		ami = getWindowsId("2022")
-		fmt.Println(ami)
 	}
 	if launchinstance {
 		createSecurityGroup(sgName)
