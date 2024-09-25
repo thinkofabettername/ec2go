@@ -25,6 +25,9 @@ var tagKey string = "ec2go"
 var cargs cliArgs
 var starttime = time.Now().Unix()
 
+var Version = "No version supplied at build time"
+var BuildDate = "No build date supplied at build time"
+
 var validModules []string = []string{
 	"run",
 	"terminate",
@@ -46,6 +49,9 @@ type cliArgs struct {
 }
 
 func main() {
+
+	fmt.Println("Version: ", Version)
+	fmt.Println("BuildDate: ", BuildDate)
 
 	cargs = handleArgs()
 
