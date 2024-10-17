@@ -8,7 +8,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"log"
+	"os"
 	"sort"
+	"time"
 )
 
 func runUsage() {
@@ -80,7 +82,7 @@ func runModule(cargs cliArgs) {
 
 	if distro == "debian" {
 		ami = getDebianId("12")
-	} else if distro == "windows" || distro == "winderz" {
+	} else if distro == "windows" {
 		ami = getWindowsId("2022")
 	}
 	if launchinstance {
@@ -114,10 +116,6 @@ func getWindowsId(version string) string {
 				Name:   aws.String("description"),
 				Values: []string{"Microsoft Windows Server " + version + " Full Locale English AMI provided by Amazon"},
 			},
-			//{
-			//	Name:   aws.String("ImageLocation"),
-			//	Values: []string{"amazon*"},
-			//},
 		},
 		IncludeDeprecated: boolPointer(true),
 	})
@@ -129,7 +127,6 @@ func getWindowsId(version string) string {
 	sort.Slice(images.Images, func(i, j int) bool {
 		return *images.Images[i].CreationDate > *images.Images[j].CreationDate
 	})
-
 	return *images.Images[0].ImageId
 }
 
@@ -157,4 +154,78 @@ func getDebianId(version string) string {
 	})
 
 	return *images.Images[0].ImageId
+}
+
+func runInstance(ami string, keyName string, sgid string, instanceType string) string {
+	fmt.Println("Launching instance with ami", ami)
+
+	tagspec := types.TagSpecification{
+		ResourceType: "instance",
+		Tags: []types.Tag{
+			{
+				Key:   aws.String("purpose"),
+				Value: aws.String("qec2"),
+			},
+			{
+				Key:   aws.String("distribution"),
+				Value: aws.String(cargs.distros[0]),
+			},
+			{
+				Key:   aws.String("ec2go"),
+				Value: aws.String("ec2go"),
+			},
+		},
+	}
+
+	userdata := getUserData()
+
+	fmt.Println("time to runinstance = ", time.Now().Unix()-starttime)
+	output, err := client.RunInstances(
+		context.TODO(),
+		&ec2.RunInstancesInput{
+			ImageId:           aws.String(ami),
+			InstanceType:      types.InstanceType(instanceType),
+			MaxCount:          aws.Int32(1),
+			MinCount:          aws.Int32(1),
+			TagSpecifications: []types.TagSpecification{tagspec},
+			KeyName:           aws.String(keyName),
+			SecurityGroupIds:  []string{sgid},
+			UserData:          &userdata,
+			InstanceMarketOptions: &types.InstanceMarketOptionsRequest{
+				MarketType: "spot",
+			},
+		},
+	)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return *output.Instances[0].InstanceId
+}
+
+func uploadKey(keyName string) {
+	keyFile := "/.ssh/id_rsa.pub"
+	if len(cargs.distros) > 0 {
+		if cargs.distros[0] == "windows" {
+			keyFile = "/.ssh/ec2go.pub"
+		}
+	}
+	if !checkForDefaultKey(keyName) {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			log.Fatal("could not obtain home directory", err)
+		}
+		contents, err := os.ReadFile(homeDir + keyFile)
+		if err != nil {
+			log.Fatal("error reading users public ssh key. Key name", keyName, err, "\nTo Generate a key run \"ssh-keygen -t rsa -m pem -f ~/.ssh/ec2go\"")
+		}
+		_, importErr := client.ImportKeyPair(context.TODO(), &ec2.ImportKeyPairInput{
+			KeyName:           aws.String(keyName),
+			PublicKeyMaterial: contents,
+		})
+		if importErr != nil {
+			log.Fatal("error uploading users public ssh key", importErr)
+		}
+	}
 }
