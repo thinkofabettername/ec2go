@@ -33,6 +33,7 @@ var validModules []string = []string{
 	"terminate",
 	"list",
 	"connect",
+	"rdisk",
 }
 
 type ec2goListInstancesInterface struct {
@@ -76,6 +77,8 @@ func main() {
 		connectModule()
 	} else if cargs.modules[0] == "terminate" {
 		terminateModule()
+	} else if cargs.modules[0] == "rdisk" {
+		resizeDiskModule()
 	} else if cargs.modules[0] == "list" {
 		listModule()
 	}
