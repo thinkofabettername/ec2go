@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"log"
 	"os"
 	"sort"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
 
 func runUsage() {
@@ -153,7 +154,16 @@ func getDebianId(version string) string {
 		return *images.Images[i].CreationDate > *images.Images[j].CreationDate
 	})
 
-	return *images.Images[0].ImageId
+	imageIndex := 0
+	for i := 0; i < len(*&images.Images); i++ {
+		if *&images.Images[i].ProductCodes == nil {
+			imageIndex = i
+			break
+		}
+	}
+	fmt.Println("Debian image index = ", imageIndex)
+
+	return *images.Images[imageIndex].ImageId
 }
 
 func runInstance(ami string, keyName string, sgid string, instanceType string) string {
