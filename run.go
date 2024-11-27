@@ -43,6 +43,7 @@ apt-get install -y htop
 apt-get install -y whois
 apt-get install -y bind9-dnsutils
 apt-get install -y tmux
+touch /root/userdata_finished
 `))
 
 }
