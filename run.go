@@ -43,7 +43,9 @@ apt-get install -y htop
 apt-get install -y whois
 apt-get install -y bind9-dnsutils
 apt-get install -y tmux
+apt-get install -y netcat-traditional
 touch /root/userdata_finished
+touch /home/admin/userdata_finished
 `))
 
 }
