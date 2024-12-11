@@ -75,7 +75,7 @@ func terminateModule() {
 
 	if rampage {
 		for _, instance := range instances.Reservations {
-			if instance.Instances[0].State.Name == "running" {
+			if instance.Instances[0].State.Name == "terminated" {
 				terminationList = append(terminationList, *instance.Instances[0].InstanceId)
 			}
 		}
@@ -83,7 +83,7 @@ func terminateModule() {
 
 	if ec2rampage {
 		for _, instance := range instances.Reservations {
-			if instance.Instances[0].State.Name == "running" {
+			if instance.Instances[0].State.Name != "terminated" {
 				isEc2go := false
 				for _, t := range instance.Instances[0].Tags {
 					if *t.Key == "ec2go" {
