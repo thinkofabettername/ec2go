@@ -28,9 +28,17 @@ func listInstances(options ...ec2goListInstancesInterface) *ec2.DescribeInstance
 
 	if silent == false {
 		//fmt.Printf("%-2s) - %-19s %-21s  %-20s %-14s %s\n",
-		fmt.Printf("%-2s) - %-19s %-11s  %-21s %-14s %s\n",
-			"ID", "INSTANCE ID", "IP", "AMI", "STATE", "TAGGED AS EC2GO")
+		fmt.Printf("%-2s) - %-19s %-11s  %-21s %-14s %-14s %-15s %s\n",
+			"ID", "INSTANCE ID", "IP", "AMI", "STATE", "TAGGED AS EC2GO", "OS", "LAUNCH TIME")
 		for i, instance := range reservations.Reservations {
+
+			os := ""
+			for _, t := range instance.Instances[0].Tags {
+				if *t.Key == "distribution" {
+					os = *t.Value
+				}
+			}
+
 			isEc2go := "No"
 			instances = append(instances, *instance.Instances[0].InstanceId)
 
@@ -48,13 +56,15 @@ func listInstances(options ...ec2goListInstancesInterface) *ec2.DescribeInstance
 
 			//fmt.Println("publicip ", publicIp)
 
-			fmt.Printf("%2d) - %s %12s %-13s %-14s %s\n",
+			fmt.Printf("%2d) - %s %12s %-13s %-14s %-15s %-15s %s\n",
 				i,
 				*instance.Instances[0].InstanceId,
 				publicIp,
 				*instance.Instances[0].ImageId,
 				*&instance.Instances[0].State.Name,
 				isEc2go,
+				os,
+				*&instance.Instances[0].LaunchTime,
 			)
 		}
 	}

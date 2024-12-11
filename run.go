@@ -27,9 +27,20 @@ func getUserData() string {
 echo $null > C:\userdata_start_canary.txt
 echo $null > C:\Users\Administrator\Desktop\userdata_start_canary.txt
 
+# open ssh port first as connection refused has a linear try again time
+# whereas timeout have an exponential backoff.
+if (!(Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyContinue | Select-Object Name, Enabled)) {
+    Write-Output "Firewall Rule 'OpenSSH-Server-In-TCP' does not exist, creating it..."
+    New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
+} else {
+    Write-Output "Firewall rule 'OpenSSH-Server-In-TCP' has been created and exists."
+}
+
+# install ssh
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force
 
+#start ssh - this needs to be fone before editing the config as the default config is generated on first start
 Start-Service sshd
 Set-Service -Name sshd -StartupType 'Automatic'
 
@@ -44,13 +55,7 @@ echo $content | Set-Content $sshd_configfile
 
 Restart-Service sshd
 
-if (!(Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyContinue | Select-Object Name, Enabled)) {
-    Write-Output "Firewall Rule 'OpenSSH-Server-In-TCP' does not exist, creating it..."
-    New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
-} else {
-    Write-Output "Firewall rule 'OpenSSH-Server-In-TCP' has been created and exists."
-}
-
+# used io.file because UTF-8 is required by sshd
 $token = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token-ttl-seconds" = "21600"} -Method PUT -Uri http://169.254.169.254/latest/api/token
 $key = Invoke-RestMethod -Headers @{"X-aws-ec2-metadata-token" = $token} -Method GET -Uri http://169.254.169.254/latest/meta-data/public-keys/0/openssh-key
 mkdir "C:\Users\Administrator\.ssh\"
