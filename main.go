@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -47,6 +48,7 @@ type cliArgs struct {
 	regions       []string
 	helps         []string
 	distros       []string
+	sshs          []string
 }
 
 func main() {
@@ -161,6 +163,8 @@ func handleArgs() cliArgs {
 			fmt.Println("setting region")
 		} else if stringIn(args[0], []string{"--rampage", "--RAMPAGE"}) {
 			cargs.rampages = append(cargs.rampages, args[0])
+		} else if stringIn(strings.ToLower(args[0]), []string{"--ssh"}) {
+			cargs.sshs = append(cargs.sshs, args[0])
 		} else if stringIn(args[0], []string{"-h", "--help"}) {
 
 		}

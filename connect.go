@@ -47,9 +47,11 @@ func connectToInstance(instanceId string) {
 	for _, t := range *&instance.Reservations[0].Instances[0].Tags {
 		if *t.Key == "distribution" {
 			if *t.Value == "windows" {
-				fmt.Println("\n\n!!! setting intsance os to windows ")
+				fmt.Println("\n\n!!! setting instance os to windows ")
 				instanceOs = "windows"
-				port = "3389"
+				if len(cargs.sshs) == 0 {
+					port = "3389"
+				}
 			}
 		}
 	}
@@ -57,18 +59,32 @@ func connectToInstance(instanceId string) {
 	var winpass string
 	fmt.Println("instance os = ", instanceOs)
 	if instanceOs == "windows" {
-		winpass = encryptPass(getWindowsPassword(instanceId))
-		fmt.Println("winpass = ", winpass)
+		if port == "3389" {
+			winpass = encryptPass(getWindowsPassword(instanceId))
 
-		fmt.Println("remmina", "-c", "rdp://administrator:'"+winpass+"'@"+ip)
+			//fmt.Println("winpass = ", winpass)
 
-		cmd := exec.Command("remmina", "-c", "rdp://administrator:"+winpass+"@"+ip+"")
+			cmd := exec.Command("remmina", "-c", "rdp://administrator:"+winpass+"@"+ip+"")
 
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		fmt.Println("Attemtping to connect with remmina")
-		cmd.Run()
+			cmd.Stdin = os.Stdin
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			fmt.Println("Attemtping to connect with remmina")
+			cmd.Run()
+		} else {
+			fmt.Println("Connecting to Windows via SSH may take a while because ssh has to be installed first")
+			waitForSocket(ip, port)
+			cmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", "-l", "administrator", "-i", getHome()+"/.ssh/ec2go", ip)
+			cmd.Stdin = os.Stdin
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+
+			err = cmd.Run() // add error checking
+
+			if err != nil {
+				log.Fatalln("!! ssh exited with non zero status !!")
+			}
+		}
 	}
 	fmt.Println("IP Address = ", ip)
 
@@ -131,7 +147,7 @@ func getWindowsPassword(instanceId string) string {
 	var err error
 	var attempts = 26
 	var password string
-	sleeptime := 10
+	sleeptime := 5
 
 	for attempts > 0 {
 		passwordData, err = client.GetPasswordData(context.TODO(), &ec2.GetPasswordDataInput{
