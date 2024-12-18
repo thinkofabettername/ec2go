@@ -36,6 +36,8 @@ if (!(Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyCon
     Write-Output "Firewall rule 'OpenSSH-Server-In-TCP' has been created and exists."
 }
 
+netsh advfirewall firewall add rule name="Open Port 22" dir=in action=allow protocol=TCP localport=22
+
 # install ssh
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force
@@ -163,6 +165,9 @@ func getWindowsId(version string) string {
 		version = "2022"
 	}
 	searchString := "Windows_Server-" + version + "-English-Full-Base*"
+	//    "Name": "Windows_Server-2016-English-Full-Base-2024.12.13",
+	//    "Name": "Windows_Server-2022-English-Full-Base-2024.12.13",
+	fmt.Println("search string = ", searchString)
 
 	images, err := client.DescribeImages(context.TODO(), &ec2.DescribeImagesInput{
 		Filters: []types.Filter{
@@ -174,10 +179,10 @@ func getWindowsId(version string) string {
 				Name:   aws.String("architecture"),
 				Values: []string{"x86_64"},
 			},
-			{
-				Name:   aws.String("description"),
-				Values: []string{"Microsoft Windows Server " + version + " Full Locale English AMI provided by Amazon"},
-			},
+			//{
+			//	Name:   aws.String("description"),
+			//	Values: []string{"Microsoft Windows Server " + version + " Full Locale English AMI provided by Amazon"},
+			//},
 		},
 		IncludeDeprecated: boolPointer(true),
 	})
