@@ -49,6 +49,7 @@ type cliArgs struct {
 	helps         []string
 	distros       []string
 	sshs          []string
+	versions      []string
 }
 
 func main() {
@@ -154,6 +155,11 @@ func handleArgs() cliArgs {
 			cargs.instanceTypes = append(cargs.instanceTypes, args[1])
 			args = args[1:]
 			fmt.Println("setting instance type")
+		} else if args[0] == "-v" {
+			if len(args) < 2 {
+				log.Fatalln("Argument must be specified after -v")
+			}
+			cargs.versions = append(cargs.versions, args[1])
 		} else if args[0] == "-r" {
 			if len(args) < 2 {
 				log.Fatalln("Argument must be specified after -r")

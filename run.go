@@ -135,9 +135,17 @@ func runModule(cargs cliArgs) {
 	ami := ""
 
 	if distro == "debian" {
-		ami = getDebianId("12")
+		if len(cargs.versions) == 0 {
+			ami = getDebianId("12")
+		} else {
+			ami = getDebianId(cargs.versions[0])
+		}
 	} else if distro == "windows" {
-		ami = getWindowsId("2022")
+		if len(cargs.versions) == 0 {
+			ami = getWindowsId("2022")
+		} else {
+			ami = getWindowsId(cargs.versions[0])
+		}
 	}
 	if launchinstance {
 		createSecurityGroup(sgName)
