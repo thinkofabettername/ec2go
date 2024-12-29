@@ -17,14 +17,19 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	//github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/smithy-go"
 )
 
 // globals
 var client *ec2.Client
+var IAMClient *iam.Client
 var tagKey string = "ec2go"
 var cargs cliArgs
 var starttime = time.Now().Unix()
+
+var admin_role_name string = "ec2go_admin_role"
 
 var Version = "No version supplied at build time"
 var BuildDate = "No build date supplied at build time"
@@ -50,6 +55,7 @@ type cliArgs struct {
 	distros       []string
 	sshs          []string
 	versions      []string
+	admin_roles   []string
 }
 
 func main() {
@@ -65,6 +71,7 @@ func main() {
 			log.Fatal(err)
 		}
 		client = ec2.NewFromConfig(cfg)
+		IAMClient = iam.NewFromConfig(cfg)
 
 	} else {
 		cfg, err := config.LoadDefaultConfig(context.TODO())
@@ -72,7 +79,13 @@ func main() {
 			log.Fatal(err)
 		}
 		client = ec2.NewFromConfig(cfg)
+		IAMClient = iam.NewFromConfig(cfg)
 	}
+
+	if !check_admin_role() {
+		create_admin_role()
+	}
+	return
 
 	if cargs.modules[0] == "run" {
 		runModule(cargs)
@@ -155,6 +168,8 @@ func handleArgs() cliArgs {
 			cargs.instanceTypes = append(cargs.instanceTypes, args[1])
 			args = args[1:]
 			fmt.Println("setting instance type")
+		} else if args[0] == "--admin" {
+			cargs.admin_roles = append(cargs.admin_roles, "--admin")
 		} else if args[0] == "-v" {
 			if len(args) < 2 {
 				log.Fatalln("Argument must be specified after -v")
