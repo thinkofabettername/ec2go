@@ -1,7 +1,5 @@
 package main
 
-// test
-
 import (
 	"context"
 	"errors"
@@ -81,11 +79,6 @@ func main() {
 		client = ec2.NewFromConfig(cfg)
 		IAMClient = iam.NewFromConfig(cfg)
 	}
-
-	if !check_admin_role() {
-		create_admin_role()
-	}
-	return
 
 	if cargs.modules[0] == "run" {
 		runModule(cargs)
@@ -175,6 +168,8 @@ func handleArgs() cliArgs {
 				log.Fatalln("Argument must be specified after -v")
 			}
 			cargs.versions = append(cargs.versions, args[1])
+		} else if args[0] == "--admin" {
+			cargs.admin_roles = append(cargs.admin_roles, args[0])
 		} else if args[0] == "-r" {
 			if len(args) < 2 {
 				log.Fatalln("Argument must be specified after -r")

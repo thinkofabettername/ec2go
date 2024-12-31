@@ -30,6 +30,9 @@ func connectModule() {
 }
 
 func connectToInstance(instanceId string) {
+	if len(cargs.admin_roles) > 0 {
+		assign_role_to_instance(instanceId)
+	}
 	time.Sleep(time.Duration(time.Second * 5))
 	port := "22"
 	instance, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{

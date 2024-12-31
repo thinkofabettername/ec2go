@@ -154,6 +154,10 @@ func runModule(cargs cliArgs) {
 		uploadKey(keyName)
 		imageid := ami
 		instanceId := runInstance(imageid, keyName, getSecurityGroupId(sgName), instanceType)
+		if len(cargs.admin_roles) > 0 {
+			fmt.Println("sleeping for 5 seconds to allow instance to reach running state before attaching instance profile.")
+			time.Sleep(time.Second * 5)
+		}
 		connectToInstance(instanceId)
 		println(instanceId)
 	}
