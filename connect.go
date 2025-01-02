@@ -93,7 +93,7 @@ func connectToInstance(instanceId string) {
 
 	if instanceOs == "linux" {
 		waitForSocket(ip, port)
-		cmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", "-l", "admin", ip)
+		cmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", "-l", "admin", "-i", getHome()+"/.ssh/ec2go", ip)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

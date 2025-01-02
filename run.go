@@ -111,7 +111,7 @@ func validateRun(cargs cliArgs) bool {
 }
 
 func runModule(cargs cliArgs) {
-	keyName := ""
+	keyName := "ec2go"
 	var sgName string = "ec2go"
 	distro := "debian"
 	var launchinstance bool = true
@@ -128,11 +128,12 @@ func runModule(cargs cliArgs) {
 		distro = cargs.distros[0]
 	}
 
-	if distro != "windows" {
-		keyName = "default-key"
-	} else {
-		keyName = "ec2go"
-	}
+	// may revert later delete me?
+	//if distro != "windows" {
+	//	keyName = "default-key"
+	//} else {
+	//	keyName = "ec2go"
+	//}
 
 	ami := ""
 
