@@ -143,6 +143,12 @@ func runModule(cargs cliArgs) {
 		} else {
 			ami = getDebianId(cargs.versions[0])
 		}
+	} else if distro == "core" {
+		if len(cargs.versions) == 0 {
+			ami = getWindowsCoreId("2022")
+		} else {
+			ami = getWindowsCoreId(cargs.versions[0])
+		}
 	} else if distro == "windows" {
 		if len(cargs.versions) == 0 {
 			ami = getWindowsId("2022")
@@ -162,6 +168,44 @@ func runModule(cargs cliArgs) {
 		connectToInstance(instanceId)
 		println(instanceId)
 	}
+}
+
+func getWindowsCoreId(version string) string {
+	fmt.Println(version)
+	if version == "" {
+		version = "2022"
+	}
+	searchString := "Windows_Server-" + version + "-English-Core-Base*"
+	//    "Name": "Windows_Server-2016-English-Full-Base-2024.12.13",
+	//    "Name": "Windows_Server-2022-English-Full-Base-2024.12.13",
+	fmt.Println("search string = ", searchString)
+
+	images, err := client.DescribeImages(context.TODO(), &ec2.DescribeImagesInput{
+		Filters: []types.Filter{
+			{
+				Name:   aws.String("name"),
+				Values: []string{searchString},
+			},
+			{
+				Name:   aws.String("architecture"),
+				Values: []string{"x86_64"},
+			},
+			//{
+			//	Name:   aws.String("description"),
+			//	Values: []string{"Microsoft Windows Server " + version + " Full Locale English AMI provided by Amazon"},
+			//},
+		},
+		IncludeDeprecated: boolPointer(true),
+	})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	sort.Slice(images.Images, func(i, j int) bool {
+		return *images.Images[i].CreationDate > *images.Images[j].CreationDate
+	})
+	return *images.Images[0].ImageId
 }
 
 func getWindowsId(version string) string {
@@ -239,6 +283,9 @@ func getDebianId(version string) string {
 
 func runInstance(ami string, keyName string, sgid string, instanceType string) string {
 	fmt.Println("Launching instance with ami", ami)
+	if cargs.distros[0] == "core" {
+		cargs.distros[0] = "windows"
+	}
 
 	tagspec := types.TagSpecification{
 		ResourceType: "instance",
@@ -257,6 +304,10 @@ func runInstance(ami string, keyName string, sgid string, instanceType string) s
 			},
 		},
 	}
+
+	//if tagspec.Tags[1].Value == "core" {
+	//	tagspec.Tags[1].Value == "windows"
+	//}
 
 	userdata := getUserData()
 
