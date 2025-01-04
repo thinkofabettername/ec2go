@@ -54,6 +54,7 @@ type cliArgs struct {
 	sshs          []string
 	versions      []string
 	admin_roles   []string
+	arch          []string
 }
 
 func main() {
@@ -181,6 +182,12 @@ func handleArgs() cliArgs {
 			cargs.rampages = append(cargs.rampages, args[0])
 		} else if stringIn(strings.ToLower(args[0]), []string{"--ssh"}) {
 			cargs.sshs = append(cargs.sshs, args[0])
+		} else if args[0] == "-a" {
+			if len(args) < 2 {
+				log.Fatalln("Argument must be specified after -a")
+			}
+			cargs.arch = append(cargs.versions, args[1])
+
 		} else if stringIn(args[0], []string{"-h", "--help"}) {
 
 		}

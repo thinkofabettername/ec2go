@@ -119,7 +119,11 @@ func runModule(cargs cliArgs) {
 	if len(cargs.instanceTypes) == 1 {
 		instanceType = cargs.instanceTypes[0]
 	} else {
-		instanceType = "t3.micro"
+		if getArch() == "x86_64" {
+			instanceType = "t3.micro"
+		} else {
+			instanceType = "t4g.micro"
+		}
 	}
 
 	if len(cargs.distros) > 1 {
@@ -226,7 +230,7 @@ func getWindowsId(version string) string {
 			},
 			{
 				Name:   aws.String("architecture"),
-				Values: []string{"x86_64"},
+				Values: []string{getArch()},
 			},
 			//{
 			//	Name:   aws.String("description"),
@@ -246,16 +250,32 @@ func getWindowsId(version string) string {
 	return *images.Images[0].ImageId
 }
 
+func getArch() string {
+	arch := ""
+	if len(cargs.arch) == 0 {
+		arch = "x86_64"
+	} else if cargs.arch[0] == "x86_64" || cargs.arch[0] == "x86" {
+		arch = "x86_64"
+	} else if cargs.arch[0] == "arm" || cargs.arch[0] == "arm64" {
+		arch = "arm64"
+	} else {
+		log.Fatal("incorrect architecure")
+		return "DOH"
+	}
+	fmt.Printf("arch = %s\n", arch)
+	return arch
+}
+
 func getDebianId(version string) string {
 	images, err := client.DescribeImages(context.TODO(), &ec2.DescribeImagesInput{
 		Filters: []types.Filter{
 			{
 				Name:   aws.String("name"),
-				Values: []string{fmt.Sprintf("*debian-%s-amd64*", version)},
+				Values: []string{fmt.Sprintf("*debian-%s-*", version)},
 			},
 			{
 				Name:   aws.String("architecture"),
-				Values: []string{"x86_64"},
+				Values: []string{getArch()},
 			},
 		},
 		IncludeDeprecated: boolPointer(true),
