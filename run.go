@@ -267,11 +267,13 @@ func getArch() string {
 }
 
 func getDebianId(version string) string {
+	searchString := fmt.Sprintf("debian-%s-*", version)
+	//fmt.Println("search string = ", searchString)
 	images, err := client.DescribeImages(context.TODO(), &ec2.DescribeImagesInput{
 		Filters: []types.Filter{
 			{
 				Name:   aws.String("name"),
-				Values: []string{fmt.Sprintf("*debian-%s-*", version)},
+				Values: []string{searchString},
 			},
 			{
 				Name:   aws.String("architecture"),
