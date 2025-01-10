@@ -31,7 +31,9 @@ func listInstances(options ...ec2goListInstancesInterface) *ec2.DescribeInstance
 		fmt.Printf("%-2s) - %-19s %-11s  %-21s %-14s %-14s %-15s %s\n",
 			"ID", "INSTANCE ID", "IP", "AMI", "STATE", "TAGGED AS EC2GO", "OS", "LAUNCH TIME")
 		for i, instance := range reservations.Reservations {
-
+			if instance.Instances[0].State.Name == "terminated" {
+				continue
+			}
 			os := ""
 			for _, t := range instance.Instances[0].Tags {
 				if *t.Key == "distribution" {
