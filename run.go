@@ -308,20 +308,13 @@ func getDebianId(version string) string {
 				reg = fmt.Sprintf("debian-%s-%s-\\d", version, getArch())
 			}
 
-			imagename := **&images.Images[i].Name
-			//fmt.Println("image name regex = ", reg)
 			match, _ := regexp.Match(reg,
 				[]byte(**&images.Images[i].Name),
 			)
 			if match {
-				fmt.Println("search = '", reg, "' string = '", **&images.Images[i].Name, "'")
-				fmt.Println("MATCHED !!!!!")
 				imageIndex = i
 				imageFound = true
 				break
-			} else {
-				fmt.Println("reg = ", reg)
-				fmt.Println("imagename = ", imagename)
 			}
 		}
 	}
