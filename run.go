@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"sort"
 	"time"
 
@@ -262,12 +263,16 @@ func getArch() string {
 		log.Fatal("incorrect architecure")
 		return "DOH"
 	}
-	fmt.Printf("arch = %s\n", arch)
 	return arch
 }
 
 func getDebianId(version string) string {
-	searchString := fmt.Sprintf("debian-%s-*", version)
+	searchString := ""
+	if getArch() == "x86_64" {
+		searchString = fmt.Sprintf("debian-%s-%s*", version, "amd64")
+	} else {
+		searchString = fmt.Sprintf("debian-%s-%s*", version, getArch())
+	}
 	//fmt.Println("search string = ", searchString)
 	images, err := client.DescribeImages(context.TODO(), &ec2.DescribeImagesInput{
 		Filters: []types.Filter{
@@ -292,14 +297,38 @@ func getDebianId(version string) string {
 	})
 
 	imageIndex := 0
+	imageFound := false
 	for i := 0; i < len(*&images.Images); i++ {
 		if *&images.Images[i].ProductCodes == nil {
-			imageIndex = i
-			break
+			//reg := fmt.Sprintf("^debian-%s-%s-\\d", version, getArch())
+			reg := ""
+			if getArch() == "x86_64" {
+				reg = fmt.Sprintf("debian-%s-%s-\\d", version, "amd64")
+			} else {
+				reg = fmt.Sprintf("debian-%s-%s-\\d", version, getArch())
+			}
+
+			imagename := **&images.Images[i].Name
+			//fmt.Println("image name regex = ", reg)
+			match, _ := regexp.Match(reg,
+				[]byte(**&images.Images[i].Name),
+			)
+			if match {
+				fmt.Println("search = '", reg, "' string = '", **&images.Images[i].Name, "'")
+				fmt.Println("MATCHED !!!!!")
+				imageIndex = i
+				imageFound = true
+				break
+			} else {
+				fmt.Println("reg = ", reg)
+				fmt.Println("imagename = ", imagename)
+			}
 		}
 	}
+	if !imageFound {
+		log.Fatalln("No valid image found")
+	}
 	fmt.Println("Debian image index = ", imageIndex)
-
 	return *images.Images[imageIndex].ImageId
 }
 
@@ -359,7 +388,7 @@ func runInstance(ami string, keyName string, sgid string, instanceType string) s
 }
 
 func uploadKey(keyName string) {
-	keyFile := "/.ssh/id_rsa.pub"
+	keyFile := "/.ssh/ec2go.pub"
 	if len(cargs.distros) > 0 {
 		if cargs.distros[0] == "windows" {
 			keyFile = "/.ssh/ec2go.pub"
