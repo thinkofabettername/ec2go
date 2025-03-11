@@ -171,7 +171,7 @@ func handleArgs() cliArgs {
 			cargs.versions = append(cargs.versions, args[1])
 		} else if args[0] == "--admin" {
 			cargs.admin_roles = append(cargs.admin_roles, args[0])
-		} else if args[0] == "-r" {
+		} else if args[0] == "-r" || args[0] == "--region" {
 			if len(args) < 2 {
 				log.Fatalln("Argument must be specified after -r")
 			}

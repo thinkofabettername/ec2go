@@ -334,10 +334,10 @@ func runInstance(ami string, keyName string, sgid string, instanceType string) s
 	tagspec := types.TagSpecification{
 		ResourceType: "instance",
 		Tags: []types.Tag{
-			{
-				Key:   aws.String("purpose"),
-				Value: aws.String("qec2"),
-			},
+			//{
+			//	Key:   aws.String("purpose"),
+			//	Value: aws.String("qec2"),
+			//},
 			{
 				Key:   aws.String("distribution"),
 				Value: aws.String(cargs.distros[0]),
